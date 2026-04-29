@@ -21,186 +21,201 @@ section[data-testid="stSidebar"] {background-color: #111;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎬 Impact of Movie Reviews on Box Office")
+st.title("🎬 Movie Reviews vs Box Office Dashboard")
 
 # =========================
 # LOAD DATA
 # =========================
 @st.cache_data
 def load_data():
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    try:
-        reviews = pd.read_csv(os.path.join(BASE_DIR, "Merged_War2_Cleaned_Reviews.csv"))
-        sentiment = pd.read_csv(os.path.join(BASE_DIR, "War 2 sentiment scores.csv"))
-        daywise = pd.read_csv(os.path.join(BASE_DIR, "War2_DayWise_Collections.csv"))
-        weekwise = pd.read_csv(os.path.join(BASE_DIR, "War2_WeekWise_Collections.csv"))
-    except Exception as e:
-        st.error(f"❌ File loading error: {e}")
-        st.stop()
+    base = os.path.dirname(os.path.abspath(__file__))
+    reviews = pd.read_csv(os.path.join(base, "Merged_War2_Cleaned_Reviews.csv"))
+    sentiment = pd.read_csv(os.path.join(base, "War 2 sentiment scores.csv"))
+    daywise = pd.read_csv(os.path.join(base, "War2_DayWise_Collections.csv"))
+    weekwise = pd.read_csv(os.path.join(base, "War2_WeekWise_Collections.csv"))
     return reviews, sentiment, daywise, weekwise
 
 reviews, sentiment, daywise, weekwise = load_data()
 
 # =========================
-# CLEAN COLUMNS
+# CLEAN COLUMN NAMES
 # =========================
-def clean_columns(df):
+def clean(df):
     df.columns = df.columns.str.strip().str.replace(" ", "_").str.lower()
     return df
 
-reviews = clean_columns(reviews)
-sentiment = clean_columns(sentiment)
-daywise = clean_columns(daywise)
-weekwise = clean_columns(weekwise)
+reviews = clean(reviews)
+sentiment = clean(sentiment)
+daywise = clean(daywise)
+weekwise = clean(weekwise)
 
 # =========================
-# SMART COLUMN DETECTION
+# AUTO DETECT IMPORTANT COLUMNS
 # =========================
-def find_column(df, keyword):
-    for col in df.columns:
-        if keyword in col:
-            return col
+def find_col(df, key):
+    for c in df.columns:
+        if key in c:
+            return c
     return None
 
-def find_numeric_column(df, keywords):
-    for col in df.columns:
-        if any(k in col for k in keywords) and "date" not in col:
-            temp = pd.to_numeric(df[col], errors='coerce')
-            if temp.notna().sum() > 0:
-                return col
+def find_numeric(df, keys):
+    for c in df.columns:
+        if any(k in c for k in keys) and "date" not in c:
+            val = pd.to_numeric(df[c], errors='coerce')
+            if val.notna().sum() > 0:
+                return c
     return None
 
-# Detect columns
-review_date_col = find_column(reviews, "date")
-sentiment_date_col = find_column(sentiment, "date")
-daywise_date_col = find_column(daywise, "date")
+date_day = find_col(daywise, "date")
+date_sent = find_col(sentiment, "date")
+date_review = find_col(reviews, "date")
 
-rating_col = find_column(reviews, "rating")
-platform_col = find_column(reviews, "platform")
-
-collection_col = find_numeric_column(daywise, ["collection","revenue","gross","cr"])
-sentiment_col = find_numeric_column(sentiment, ["sentiment","score","bert","polarity"])
-
-# Safety check
-if collection_col is None:
-    st.error(f"❌ No numeric collection column found: {daywise.columns}")
-    st.stop()
-
-if sentiment_col is None:
-    st.error(f"❌ No numeric sentiment column found: {sentiment.columns}")
-    st.stop()
+collection = find_numeric(daywise, ["collection","cr","gross"])
+sent_score = find_numeric(sentiment, ["sentiment","score","bert"])
+rating = find_col(reviews, "rating")
+platform = find_col(reviews, "platform")
 
 # =========================
-# DATA CLEANING
+# CLEAN DATA
 # =========================
-reviews[review_date_col] = pd.to_datetime(reviews[review_date_col], errors='coerce')
-sentiment[sentiment_date_col] = pd.to_datetime(sentiment[sentiment_date_col], errors='coerce')
-daywise[daywise_date_col] = pd.to_datetime(daywise[daywise_date_col], errors='coerce')
+daywise[date_day] = pd.to_datetime(daywise[date_day], errors='coerce')
+sentiment[date_sent] = pd.to_datetime(sentiment[date_sent], errors='coerce')
+reviews[date_review] = pd.to_datetime(reviews[date_review], errors='coerce')
 
-reviews[rating_col] = reviews[rating_col].fillna(0)
-
-# Ensure numeric
-daywise[collection_col] = pd.to_numeric(daywise[collection_col], errors='coerce')
-sentiment[sentiment_col] = pd.to_numeric(sentiment[sentiment_col], errors='coerce')
-
-# Drop invalid numeric rows
-daywise = daywise.dropna(subset=[collection_col])
-sentiment = sentiment.dropna(subset=[sentiment_col])
+daywise[collection] = pd.to_numeric(daywise[collection], errors='coerce')
+sentiment[sent_score] = pd.to_numeric(sentiment[sent_score], errors='coerce')
 
 # =========================
-# SAFE MERGE
+# MERGE
 # =========================
-df_daywise = daywise.copy()
-df_sentiment = sentiment.copy()
+daywise = daywise.dropna(subset=[date_day, collection])
+sentiment = sentiment.dropna(subset=[date_sent, sent_score])
 
-df_daywise[daywise_date_col] = pd.to_datetime(df_daywise[daywise_date_col], errors='coerce')
-df_sentiment[sentiment_date_col] = pd.to_datetime(df_sentiment[sentiment_date_col], errors='coerce')
+daywise[date_day] = daywise[date_day].dt.date
+sentiment[date_sent] = sentiment[date_sent].dt.date
 
-df_daywise = df_daywise.dropna(subset=[daywise_date_col])
-df_sentiment = df_sentiment.dropna(subset=[sentiment_date_col])
+df = pd.merge(daywise, sentiment, left_on=date_day, right_on=date_sent, how="left")
+df[date_day] = pd.to_datetime(df[date_day])
 
-df_daywise[daywise_date_col] = df_daywise[daywise_date_col].dt.date
-df_sentiment[sentiment_date_col] = df_sentiment[sentiment_date_col].dt.date
-
-df = pd.merge(
-    df_daywise,
-    df_sentiment,
-    left_on=daywise_date_col,
-    right_on=sentiment_date_col,
-    how="left"
-)
-
-df[daywise_date_col] = pd.to_datetime(df[daywise_date_col])
+# =========================
+# USER FRIENDLY COLUMNS
+# =========================
+df.rename(columns={
+    date_day: "Date",
+    collection: "Daily Collection (Cr)",
+    sent_score: "Sentiment Score"
+}, inplace=True)
 
 # =========================
 # FEATURES
 # =========================
-df = df.sort_values(daywise_date_col)
-df['day_number'] = range(1, len(df) + 1)
+df = df.sort_values("Date")
+df["Day"] = df["Date"].dt.day_name()
+df["Week"] = "Week " + ((np.arange(len(df)) // 7) + 1).astype(str)
 
-df['week_number'] = "Week " + ((df['day_number'] - 1)//7 + 1).astype(str)
-df['day_name'] = df[daywise_date_col].dt.day_name()
-df['is_weekend'] = df['day_name'].isin(['Saturday','Sunday']).astype(int)
-
-# SAFE tiers
-df['collection_tier'] = np.where(df[collection_col] >= 20, "Blockbuster",
-                        np.where(df[collection_col] >= 5, "Strong",
-                        np.where(df[collection_col] >= 1, "Moderate", "Low")))
-
-df['sentiment_label'] = np.where(df[sentiment_col] >= 0.6, "Positive",
-                        np.where(df[sentiment_col] >= 0.4, "Neutral", "Negative"))
-
-df['ma3_sentiment'] = df[sentiment_col].rolling(3).mean()
+df["Collection Category"] = np.where(df["Daily Collection (Cr)"] > 20, "Blockbuster",
+                             np.where(df["Daily Collection (Cr)"] > 5, "Strong",
+                             np.where(df["Daily Collection (Cr)"] > 1, "Average", "Low")))
 
 # =========================
-# SIDEBAR
+# SIDEBAR (SLICERS)
 # =========================
 st.sidebar.header("🎛 Filters")
 
-date_range = st.sidebar.date_input(
-    "Date Range",
-    [df[daywise_date_col].min(), df[daywise_date_col].max()]
-)
+date_range = st.sidebar.date_input("Select Date Range",
+    [df["Date"].min(), df["Date"].max()])
+
+day_filter = st.sidebar.multiselect("Select Day",
+    df["Day"].unique(), default=df["Day"].unique())
+
+week_filter = st.sidebar.multiselect("Select Week",
+    df["Week"].unique(), default=df["Week"].unique())
+
+source_filter = st.sidebar.multiselect("Review Source",
+    reviews[platform].dropna().unique(),
+    default=reviews[platform].dropna().unique())
 
 # =========================
-# FILTER
+# FILTER DATA
 # =========================
 filtered = df[
-    (df[daywise_date_col] >= pd.to_datetime(date_range[0])) &
-    (df[daywise_date_col] <= pd.to_datetime(date_range[1]))
+    (df["Date"] >= pd.to_datetime(date_range[0])) &
+    (df["Date"] <= pd.to_datetime(date_range[1])) &
+    (df["Day"].isin(day_filter)) &
+    (df["Week"].isin(week_filter))
 ]
+
+filtered_reviews = reviews[reviews[platform].isin(source_filter)]
 
 # =========================
 # KPI
 # =========================
-col1, col2, col3 = st.columns(3)
+st.subheader("📊 Key Insights")
 
-col1.metric("Total Collection", round(filtered[collection_col].sum(),2))
-col2.metric("Avg Sentiment", round(filtered[sentiment_col].mean(),3))
-col3.metric("Total Records", len(filtered))
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric("Total Collection", round(filtered["Daily Collection (Cr)"].sum(),2))
+c2.metric("Average Sentiment", round(filtered["Sentiment Score"].mean(),2))
+c3.metric("Total Reviews", len(filtered_reviews))
+c4.metric("Peak Collection Day", round(filtered["Daily Collection (Cr)"].max(),2))
 
 # =========================
-# CHARTS
+# VISUALS
 # =========================
-st.plotly_chart(px.line(filtered, x=daywise_date_col, y=collection_col),
-                use_container_width=True)
+tab1, tab2, tab3 = st.tabs(["Overview","Sentiment","Revenue"])
 
-st.plotly_chart(px.scatter(filtered,
-                           x=sentiment_col,
-                           y=collection_col,
-                           size=collection_col),
-                use_container_width=True)
+with tab1:
+    st.plotly_chart(px.bar(filtered, x="Date", y="Daily Collection (Cr)",
+                           color="Collection Category",
+                           title="Daily Box Office Trend"),
+                    use_container_width=True)
+
+    st.plotly_chart(px.scatter(filtered,
+                               x="Sentiment Score",
+                               y="Daily Collection (Cr)",
+                               size="Daily Collection (Cr)",
+                               color="Collection Category",
+                               title="Sentiment vs Revenue"),
+                    use_container_width=True)
+
+with tab2:
+    st.plotly_chart(px.line(filtered, x="Date", y="Sentiment Score",
+                            title="Sentiment Trend"),
+                    use_container_width=True)
+
+    st.plotly_chart(px.histogram(filtered_reviews,
+                                 x=rating,
+                                 title="User Rating Distribution"),
+                    use_container_width=True)
+
+with tab3:
+    st.plotly_chart(px.bar(weekwise,
+                           x=find_col(weekwise,"week"),
+                           y=find_numeric(weekwise,["collection","cr"]),
+                           title="Weekly Revenue"),
+                    use_container_width=True)
+
+    weekend = filtered[filtered["Day"].isin(["Saturday","Sunday"])]["Daily Collection (Cr)"].mean()
+    weekday = filtered[~filtered["Day"].isin(["Saturday","Sunday"])]["Daily Collection (Cr)"].mean()
+
+    st.plotly_chart(px.bar(
+        pd.DataFrame({"Type":["Weekend","Weekday"],"Collection":[weekend,weekday]}),
+        x="Type", y="Collection",
+        title="Weekend vs Weekday Performance"
+    ), use_container_width=True)
 
 # =========================
 # INSIGHTS
 # =========================
-corr = filtered[[collection_col, sentiment_col]].corr().iloc[0,1]
+st.subheader("📌 Business Insights")
+
+corr = filtered[["Daily Collection (Cr)", "Sentiment Score"]].corr().iloc[0,1]
 
 st.write(f"Correlation: {round(corr,3)}")
 
 if corr > 0.6:
-    st.success("Strong positive relationship")
+    st.success("Strong positive impact of reviews on revenue")
 elif corr > 0.3:
-    st.warning("Moderate relationship")
+    st.warning("Moderate relationship observed")
 else:
     st.error("Weak relationship")
