@@ -12,7 +12,6 @@ st.set_page_config(page_title="🎬 Movie Dashboard", layout="wide")
 st.markdown("""
 <style>
 .stApp {background: linear-gradient(to right, #141e30, #243b55); color: white;}
-section[data-testid="stSidebar"] {background-color: #111;}
 [data-testid="metric-container"] {
     background-color: rgba(255,255,255,0.08);
     border-radius: 12px;
@@ -50,7 +49,7 @@ daywise = clean(daywise)
 weekwise = clean(weekwise)
 
 # =========================
-# AUTO DETECT IMPORTANT COLUMNS
+# COLUMN DETECTION
 # =========================
 def find_col(df, key):
     for c in df.columns:
@@ -66,7 +65,6 @@ def find_numeric(df, keys):
                 return c
     return None
 
-# 🔥 FIX: Better platform detection
 def find_platform_column(df):
     keywords = ["platform","source","site","channel"]
     for col in df.columns:
@@ -83,18 +81,16 @@ sent_score = find_numeric(sentiment, ["sentiment","score","bert"])
 rating = find_col(reviews, "rating")
 platform = find_platform_column(reviews)
 
-# 🔥 FIX: Safe fallback if platform not found
 if platform is None:
-    st.warning("⚠️ No review source column found → using default")
     reviews["review_source"] = "All"
     platform = "review_source"
 
 # =========================
 # CLEAN DATA
 # =========================
-daywise[date_day] = pd.to_datetime(daywise[date_day], errors='coerce')
-sentiment[date_sent] = pd.to_datetime(sentiment[date_sent], errors='coerce')
-reviews[date_review] = pd.to_datetime(reviews[date_review], errors='coerce')
+daywise[date_day] = pd.to_datetime(daywise[date_day])
+sentiment[date_sent] = pd.to_datetime(sentiment[date_sent])
+reviews[date_review] = pd.to_datetime(reviews[date_review])
 
 daywise[collection] = pd.to_numeric(daywise[collection], errors='coerce')
 sentiment[sent_score] = pd.to_numeric(sentiment[sent_score], errors='coerce')
@@ -132,61 +128,51 @@ df["Collection Category"] = np.where(df["Daily Collection (Cr)"] > 20, "Blockbus
                              np.where(df["Daily Collection (Cr)"] > 1, "Average", "Low")))
 
 # =========================
-# 🔥 NEW: BUTTON FILTERS (ADDED)
+# 🎛 BUTTON SLICERS
 # =========================
 st.subheader("⚡ Quick Filters")
 
-colf1, colf2 = st.columns(2)
+col1, col2, col3, col4 = st.columns(4)
 
-with colf1:
+selected_day = "All"
+selected_week = "All"
+selected_source = "All"
+
+with col1:
+    selected_day = st.selectbox("Day", ["All"] + list(df["Day"].unique()))
+
+with col2:
+    selected_week = st.selectbox("Week", ["All"] + list(df["Week"].unique()))
+
+with col3:
+    selected_source = st.selectbox("Source", ["All"] + list(reviews[platform].dropna().unique()))
+
+with col4:
     if st.button("Last 7 Days"):
         df = df.tail(7)
 
-with colf2:
-    if st.button("Full Data"):
-        df = df.copy()
+# APPLY FILTERS
+filtered = df.copy()
 
-# =========================
-# SIDEBAR (SLICERS - KEEPING YOUR ORIGINAL)
-# =========================
-st.sidebar.header("🎛 Filters")
+if selected_day != "All":
+    filtered = filtered[filtered["Day"] == selected_day]
 
-date_range = st.sidebar.date_input("Select Date Range",
-    [df["Date"].min(), df["Date"].max()])
+if selected_week != "All":
+    filtered = filtered[filtered["Week"] == selected_week]
 
-day_filter = st.sidebar.multiselect("Select Day",
-    df["Day"].unique(), default=df["Day"].unique())
-
-week_filter = st.sidebar.multiselect("Select Week",
-    df["Week"].unique(), default=df["Week"].unique())
-
-source_filter = st.sidebar.multiselect("Review Source",
-    reviews[platform].dropna().unique(),
-    default=reviews[platform].dropna().unique())
-
-# =========================
-# FILTER DATA
-# =========================
-filtered = df[
-    (df["Date"] >= pd.to_datetime(date_range[0])) &
-    (df["Date"] <= pd.to_datetime(date_range[1])) &
-    (df["Day"].isin(day_filter)) &
-    (df["Week"].isin(week_filter))
-]
-
-filtered_reviews = reviews[reviews[platform].isin(source_filter)]
+filtered_reviews = reviews.copy()
+if selected_source != "All":
+    filtered_reviews = reviews[reviews[platform] == selected_source]
 
 # =========================
 # KPI
 # =========================
-st.subheader("📊 Key Insights")
-
 c1, c2, c3, c4 = st.columns(4)
 
 c1.metric("Total Collection", round(filtered["Daily Collection (Cr)"].sum(),2))
-c2.metric("Average Sentiment", round(filtered["Sentiment Score"].mean(),2))
-c3.metric("Total Reviews", len(filtered_reviews))
-c4.metric("Peak Collection Day", round(filtered["Daily Collection (Cr)"].max(),2))
+c2.metric("Avg Sentiment", round(filtered["Sentiment Score"].mean(),2))
+c3.metric("Reviews", len(filtered_reviews))
+c4.metric("Peak Day", round(filtered["Daily Collection (Cr)"].max(),2))
 
 # =========================
 # VISUALS
@@ -196,32 +182,55 @@ tab1, tab2, tab3 = st.tabs(["Overview","Sentiment","Revenue"])
 with tab1:
     st.plotly_chart(px.bar(filtered, x="Date", y="Daily Collection (Cr)",
                            color="Collection Category",
-                           title="Daily Box Office Trend"),
+                           color_discrete_sequence=px.colors.qualitative.Bold,
+                           title="Daily Collection Trend"),
                     use_container_width=True)
 
     st.plotly_chart(px.scatter(filtered,
                                x="Sentiment Score",
                                y="Daily Collection (Cr)",
-                               size="Daily Collection (Cr)",
                                color="Collection Category",
+                               size="Daily Collection (Cr)",
+                               color_discrete_sequence=px.colors.qualitative.Vivid,
                                title="Sentiment vs Revenue"),
+                    use_container_width=True)
+
+    # NEW VISUAL
+    st.plotly_chart(px.area(filtered, x="Date", y="Daily Collection (Cr)",
+                            title="Revenue Growth Over Time"),
                     use_container_width=True)
 
 with tab2:
     st.plotly_chart(px.line(filtered, x="Date", y="Sentiment Score",
+                            color_discrete_sequence=["cyan"],
                             title="Sentiment Trend"),
                     use_container_width=True)
 
     st.plotly_chart(px.histogram(filtered_reviews,
                                  x=rating,
-                                 title="User Rating Distribution"),
+                                 color=platform,
+                                 title="Ratings by Source"),
+                    use_container_width=True)
+
+    # NEW VISUAL
+    st.plotly_chart(px.box(filtered_reviews,
+                           x=platform,
+                           y=rating,
+                           title="Rating Spread by Platform"),
                     use_container_width=True)
 
 with tab3:
     st.plotly_chart(px.bar(weekwise,
                            x=find_col(weekwise,"week"),
                            y=find_numeric(weekwise,["collection","cr"]),
+                           color_discrete_sequence=["orange"],
                            title="Weekly Revenue"),
+                    use_container_width=True)
+
+    # NEW VISUAL
+    st.plotly_chart(px.pie(filtered,
+                           names="Collection Category",
+                           title="Revenue Distribution by Category"),
                     use_container_width=True)
 
     weekend = filtered[filtered["Day"].isin(["Saturday","Sunday"])]["Daily Collection (Cr)"].mean()
@@ -230,21 +239,6 @@ with tab3:
     st.plotly_chart(px.bar(
         pd.DataFrame({"Type":["Weekend","Weekday"],"Collection":[weekend,weekday]}),
         x="Type", y="Collection",
-        title="Weekend vs Weekday Performance"
+        color="Type",
+        title="Weekend vs Weekday"
     ), use_container_width=True)
-
-# =========================
-# INSIGHTS
-# =========================
-st.subheader("📌 Business Insights")
-
-corr = filtered[["Daily Collection (Cr)", "Sentiment Score"]].corr().iloc[0,1]
-
-st.write(f"Correlation: {round(corr,3)}")
-
-if corr > 0.6:
-    st.success("Strong positive impact of reviews on revenue")
-elif corr > 0.3:
-    st.warning("Moderate relationship observed")
-else:
-    st.error("Weak relationship")
