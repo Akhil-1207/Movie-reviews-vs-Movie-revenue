@@ -67,14 +67,43 @@ def find_column(df, keyword):
             return col
     return None
 
+def find_best_sentiment_column(df):
+    keywords = ["sentiment", "score", "bert", "polarity"]
+    for key in keywords:
+        for col in df.columns:
+            if key in col:
+                return col
+    return None
+
+def find_best_collection_column(df):
+    keywords = ["collection", "revenue", "gross", "cr"]
+    for key in keywords:
+        for col in df.columns:
+            if key in col:
+                return col
+    return None
+
+# Detect columns
 review_date_col = find_column(reviews, "date")
 sentiment_date_col = find_column(sentiment, "date")
 daywise_date_col = find_column(daywise, "date")
 
 rating_col = find_column(reviews, "rating")
 platform_col = find_column(reviews, "platform")
-collection_col = find_column(daywise, "collection")
-sentiment_col = find_column(sentiment, "sentiment")
+
+collection_col = find_best_collection_column(daywise)
+sentiment_col = find_best_sentiment_column(sentiment)
+
+# =========================
+# SAFETY CHECK (IMPORTANT)
+# =========================
+if sentiment_col is None:
+    st.error(f"❌ Sentiment column not found. Columns: {list(sentiment.columns)}")
+    st.stop()
+
+if collection_col is None:
+    st.error(f"❌ Collection column not found. Columns: {list(daywise.columns)}")
+    st.stop()
 
 # =========================
 # DATA CLEANING
@@ -85,8 +114,8 @@ daywise[daywise_date_col] = pd.to_datetime(daywise[daywise_date_col], errors='co
 
 reviews[rating_col] = reviews[rating_col].fillna(0)
 
-daywise[collection_col] = daywise[collection_col].round(2)
-sentiment[sentiment_col] = sentiment[sentiment_col].round(3)
+daywise[collection_col] = pd.to_numeric(daywise[collection_col], errors='coerce').round(2)
+sentiment[sentiment_col] = pd.to_numeric(sentiment[sentiment_col], errors='coerce').round(3)
 
 # =========================
 # MERGE
@@ -107,7 +136,7 @@ df['day_name'] = df[daywise_date_col].dt.day_name()
 df['is_weekend'] = df['day_name'].isin(['Saturday','Sunday']).astype(int)
 
 # =========================
-# FEATURE ENGINEERING
+# FEATURES
 # =========================
 df['collection_tier'] = np.select(
     [df[collection_col] >= 20,
@@ -206,7 +235,10 @@ with tab2:
     st.plotly_chart(fig4, use_container_width=True)
 
 with tab3:
-    fig5 = px.bar(weekwise, x="week_number", y=collection_col,
+    week_col = find_best_collection_column(weekwise)
+    week_name_col = find_column(weekwise, "week")
+
+    fig5 = px.bar(weekwise, x=week_name_col, y=week_col,
                   title="Weekly Revenue")
     st.plotly_chart(fig5, use_container_width=True)
 
