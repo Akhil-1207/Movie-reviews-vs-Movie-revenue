@@ -95,7 +95,7 @@ collection_col = find_best_collection_column(daywise)
 sentiment_col = find_best_sentiment_column(sentiment)
 
 # =========================
-# SAFETY CHECK (IMPORTANT)
+# SAFETY CHECK
 # =========================
 if sentiment_col is None:
     st.error(f"❌ Sentiment column not found. Columns: {list(sentiment.columns)}")
@@ -118,16 +118,38 @@ daywise[collection_col] = pd.to_numeric(daywise[collection_col], errors='coerce'
 sentiment[sentiment_col] = pd.to_numeric(sentiment[sentiment_col], errors='coerce').round(3)
 
 # =========================
-# MERGE
+# 🔥 SAFE MERGE FIX
 # =========================
+df_daywise = daywise.copy()
+df_sentiment = sentiment.copy()
+
+# Convert to datetime
+df_daywise[daywise_date_col] = pd.to_datetime(df_daywise[daywise_date_col], errors='coerce')
+df_sentiment[sentiment_date_col] = pd.to_datetime(df_sentiment[sentiment_date_col], errors='coerce')
+
+# Drop invalid
+df_daywise = df_daywise.dropna(subset=[daywise_date_col])
+df_sentiment = df_sentiment.dropna(subset=[sentiment_date_col])
+
+# Normalize (remove time mismatch)
+df_daywise[daywise_date_col] = df_daywise[daywise_date_col].dt.date
+df_sentiment[sentiment_date_col] = df_sentiment[sentiment_date_col].dt.date
+
+# Merge
 df = pd.merge(
-    daywise,
-    sentiment,
+    df_daywise,
+    df_sentiment,
     left_on=daywise_date_col,
     right_on=sentiment_date_col,
     how="left"
 )
 
+# Convert back to datetime
+df[daywise_date_col] = pd.to_datetime(df[daywise_date_col])
+
+# =========================
+# FEATURE ENGINEERING
+# =========================
 df = df.sort_values(daywise_date_col)
 df['day_number'] = range(1, len(df) + 1)
 
@@ -135,9 +157,6 @@ df['week_number'] = "Week " + ((df['day_number'] - 1)//7 + 1).astype(str)
 df['day_name'] = df[daywise_date_col].dt.day_name()
 df['is_weekend'] = df['day_name'].isin(['Saturday','Sunday']).astype(int)
 
-# =========================
-# FEATURES
-# =========================
 df['collection_tier'] = np.select(
     [df[collection_col] >= 20,
      df[collection_col] >= 5,
@@ -215,32 +234,32 @@ col4.metric("🔥 Peak Day", round(filtered[collection_col].max(),2))
 tab1, tab2, tab3 = st.tabs(["📈 Overview", "🧠 Sentiment", "💰 Revenue"])
 
 with tab1:
-    fig1 = px.bar(filtered, x=daywise_date_col, y=collection_col,
-                  color="collection_tier", title="Daily Collection")
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(px.bar(filtered, x=daywise_date_col, y=collection_col,
+                           color="collection_tier", title="Daily Collection"),
+                    use_container_width=True)
 
-    fig2 = px.scatter(filtered, x=sentiment_col, y=collection_col,
-                      color="collection_tier", size=collection_col,
-                      title="Sentiment vs Collection")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(px.scatter(filtered, x=sentiment_col, y=collection_col,
+                               color="collection_tier", size=collection_col,
+                               title="Sentiment vs Collection"),
+                    use_container_width=True)
 
 with tab2:
-    fig3 = px.line(filtered, x=daywise_date_col,
-                   y=[sentiment_col, "ma3_sentiment"],
-                   title="Sentiment Trend")
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(px.line(filtered, x=daywise_date_col,
+                            y=[sentiment_col, "ma3_sentiment"],
+                            title="Sentiment Trend"),
+                    use_container_width=True)
 
-    fig4 = px.histogram(filtered_reviews, x=rating_col, nbins=10,
-                        title="Ratings Distribution")
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(px.histogram(filtered_reviews, x=rating_col, nbins=10,
+                                 title="Ratings Distribution"),
+                    use_container_width=True)
 
 with tab3:
     week_col = find_best_collection_column(weekwise)
     week_name_col = find_column(weekwise, "week")
 
-    fig5 = px.bar(weekwise, x=week_name_col, y=week_col,
-                  title="Weekly Revenue")
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(px.bar(weekwise, x=week_name_col, y=week_col,
+                           title="Weekly Revenue"),
+                    use_container_width=True)
 
 # =========================
 # INSIGHTS
