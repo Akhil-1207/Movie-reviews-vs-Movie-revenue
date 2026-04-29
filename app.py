@@ -66,6 +66,14 @@ def find_numeric(df, keys):
                 return c
     return None
 
+# 🔥 FIX: Better platform detection
+def find_platform_column(df):
+    keywords = ["platform","source","site","channel"]
+    for col in df.columns:
+        if any(k in col for k in keywords):
+            return col
+    return None
+
 date_day = find_col(daywise, "date")
 date_sent = find_col(sentiment, "date")
 date_review = find_col(reviews, "date")
@@ -73,7 +81,13 @@ date_review = find_col(reviews, "date")
 collection = find_numeric(daywise, ["collection","cr","gross"])
 sent_score = find_numeric(sentiment, ["sentiment","score","bert"])
 rating = find_col(reviews, "rating")
-platform = find_col(reviews, "platform")
+platform = find_platform_column(reviews)
+
+# 🔥 FIX: Safe fallback if platform not found
+if platform is None:
+    st.warning("⚠️ No review source column found → using default")
+    reviews["review_source"] = "All"
+    platform = "review_source"
 
 # =========================
 # CLEAN DATA
@@ -118,7 +132,22 @@ df["Collection Category"] = np.where(df["Daily Collection (Cr)"] > 20, "Blockbus
                              np.where(df["Daily Collection (Cr)"] > 1, "Average", "Low")))
 
 # =========================
-# SIDEBAR (SLICERS)
+# 🔥 NEW: BUTTON FILTERS (ADDED)
+# =========================
+st.subheader("⚡ Quick Filters")
+
+colf1, colf2 = st.columns(2)
+
+with colf1:
+    if st.button("Last 7 Days"):
+        df = df.tail(7)
+
+with colf2:
+    if st.button("Full Data"):
+        df = df.copy()
+
+# =========================
+# SIDEBAR (SLICERS - KEEPING YOUR ORIGINAL)
 # =========================
 st.sidebar.header("🎛 Filters")
 
