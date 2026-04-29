@@ -41,10 +41,10 @@ def load_data():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     
     try:
-        reviews = pd.read_csv(os.path.join(BASE_DIR, "Merged_War2_Cleaned_Reviews(6).csv"))
-        sentiment = pd.read_csv(os.path.join(BASE_DIR, "War 2 sentiment scores(6).csv"))
-        daywise = pd.read_csv(os.path.join(BASE_DIR, "War2_DayWise_Collections(1).csv"))
-        weekwise = pd.read_csv(os.path.join(BASE_DIR, "War2_WeekWise_Collections(1).csv"))
+        reviews = pd.read_csv(os.path.join(BASE_DIR, "Merged_War2_Cleaned_Reviews.csv"))
+        sentiment = pd.read_csv(os.path.join(BASE_DIR, "War 2 sentiment scores.csv"))
+        daywise = pd.read_csv(os.path.join(BASE_DIR, "War2_DayWise_Collections.csv"))
+        weekwise = pd.read_csv(os.path.join(BASE_DIR, "War2_WeekWise_Collections.csv"))
     except Exception as e:
         st.error(f"❌ File loading error: {e}")
         st.stop()
